@@ -10,8 +10,10 @@ Streamlitを使用して以下の機能を提供する。
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import random
 import pickle
+import time
 from src.env.game_env import HunterTaskEnv
 from src.agents.lv0 import Lv0Agent
 from src.ui.components import draw_grid_matplotlib
@@ -36,6 +38,10 @@ def initialize_simulation():
     # マニュアル操作の初期化
     if 'manual_action_hunter_0' not in st.session_state:
         st.session_state.manual_action_hunter_0 = 0
+        
+    # ターンフェーズの初期化 (player or ai)
+    if 'turn_phase' not in st.session_state:
+        st.session_state.turn_phase = 'player'
 
 # --- 1. アプリケーションの開始 ---
 
@@ -45,11 +51,6 @@ st.title("ハンタータスク シミュレーション")
 # st.session_stateに 'env' がまだ存在しない場合（＝アプリ起動時）のみ実行
 if 'env' not in st.session_state:
     initialize_simulation()
-# セーフガード: 既存セッションでも必要キーが無ければ初期化
-if 'captured' not in st.session_state:
-    st.session_state.captured = {'prey_0': False, 'prey_1': False}
-if 'q_tables' not in st.session_state:
-    st.session_state.q_tables = {'hunter_0': None, 'hunter_1': None}
 
 # --- サイドバー（設定） ---
 prey_move_enabled = st.sidebar.checkbox(
@@ -70,11 +71,28 @@ debug_info_H1 = st.sidebar.checkbox(
     help="ONでHunter1の動作先のデバッグ画面が表示されます。"
 )
 
-# （次ステップの準備のみ）Qテーブル読み込みUI
+# ゲームモード選択
+game_mode = st.sidebar.radio(
+    "ゲームモード",
+    ["AI and AI", "Player and AI"],
+    index=0,
+    help="Player and AIモードでは、Hunter 0を操作できます"
+)
+
+# ハンター制御モード
+if game_mode == "AI and AI":
+    control_h0 = st.sidebar.selectbox("Hunter 0 制御", ["Simple", "Lv0 (Q)"], index=1, key="ctrl_h0")
+else:
+    control_h0 = "Manual"
+    st.sidebar.info("Hunter 0 はプレイヤー操作です")
+
+control_h1 = st.sidebar.selectbox("Hunter 1 制御", ["Simple", "Lv0 (Q)"], index=1, key="ctrl_h1")
+
+# Qテーブル読み込みUI
 with st.sidebar.expander("Qテーブル（読み込みのみ）", expanded=False):
     file_options = ["(未使用)", "q_table.pkl", "q_table.pkl2"]
-    sel_h0 = st.selectbox("Hunter 0 用", file_options, index=0, key="sel_h0")
-    sel_h1 = st.selectbox("Hunter 1 用", file_options, index=0, key="sel_h1")
+    sel_h0 = st.selectbox("Hunter 0 用", file_options, index=1, key="sel_h0")
+    sel_h1 = st.selectbox("Hunter 1 用", file_options, index=2, key="sel_h1")
 
     def _load_q(path):
         try:
@@ -92,12 +110,14 @@ with st.sidebar.expander("Qテーブル（読み込みのみ）", expanded=False
             st.warning(f"{path} の読み込みに失敗: {e}")
             return None
 
-    st.session_state.q_tables['hunter_0'] = _load_q(sel_h0) if sel_h0 != "(未使用)" else None
-    st.session_state.q_tables['hunter_1'] = _load_q(sel_h1) if sel_h1 != "(未使用)" else None
-
-    # Qエージェントの用意（q_table が選ばれている場合のみ）
+    # st.session_state の箱が無い場合は作る
     if 'q_agents' not in st.session_state:
         st.session_state.q_agents = {'hunter_0': None, 'hunter_1': None}
+    if 'q_tables' not in st.session_state:
+        st.session_state.q_tables = {'hunter_0': None, 'hunter_1': None}
+
+    st.session_state.q_tables['hunter_0'] = _load_q(sel_h0) if sel_h0 != "(未使用)" else None
+    st.session_state.q_tables['hunter_1'] = _load_q(sel_h1) if sel_h1 != "(未使用)" else None
 
     if st.session_state.q_tables['hunter_0'] is not None:
         st.session_state.q_agents['hunter_0'] = QLearningAgent(st.session_state.q_tables['hunter_0'], 'hunter_0')
@@ -109,34 +129,11 @@ with st.sidebar.expander("Qテーブル（読み込みのみ）", expanded=False
     else:
         st.session_state.q_agents['hunter_1'] = None
 
-# ゲームモード選択
-game_mode = st.sidebar.radio(
-    "ゲームモード",
-    ["AI vs AI", "Player vs AI"],
-    index=0,
-    help="Player vs AIモードでは、Hunter 0を操作できます"
-)
-
-# ハンター制御モード
-if game_mode == "AI vs AI":
-    control_h0 = st.sidebar.selectbox("Hunter 0 制御", ["Simple", "Lv0 (Q)"], index=0, key="ctrl_h0")
-else:
-    control_h0 = "Manual"
-    st.sidebar.info("Hunter 0 はプレイヤー操作です")
-
-control_h1 = st.sidebar.selectbox("Hunter 1 制御", ["Simple", "Lv0 (Q)"], index=0, key="ctrl_h1")
-
 # Qテーブルの自動ロード（ユーザーが選ばなくても使えるように）
 default_paths = {
     'hunter_0': 'q_table.pkl',
     'hunter_1': 'q_table.pkl2',
 }
-
-# st.session_state の箱が無い場合は作る
-if 'q_agents' not in st.session_state:
-    st.session_state.q_agents = {'hunter_0': None, 'hunter_1': None}
-if 'q_tables' not in st.session_state:
-    st.session_state.q_tables = {'hunter_0': None, 'hunter_1': None}
 
 # 制御モードが Q のハンターについて、自動で q_table を読み込む
 for hunter_id in ('hunter_0', 'hunter_1'):
@@ -166,157 +163,205 @@ for hunter_id in ('hunter_0', 'hunter_1'):
             except Exception as e:
                 st.sidebar.warning(f"{hunter_id}: {path} の自動読み込みに失敗しました: {e}")
 
-# --- 3. UIコンポーネント（ボタン）の配置 ---
+# グリッド描画をここに移動
+if 'env' in st.session_state:
+    current_state = st.session_state.env.get_state()
+    draw_grid_matplotlib(current_state, game_mode)
+
+# --- 3. UIコンポーネント（ボタン）とメインロジック ---
 
 col1, col2 = st.columns(2)
 
+# フラグの初期化
+run_step_ai_only = False # AI vs AI 用
+run_step_h0 = False      # Player vs AI (Playerターン) 用
+run_step_h1 = False      # Player vs AI (AIターン) 用
+
 with col1:
-    if game_mode == "Player vs AI":
-        st.write("Hunter 0 操作")
+    if game_mode == "Player and AI":
+        # プレイヤーのターン
+        if st.session_state.turn_phase == 'player':
+            st.write("Hunter 0 操作 (Your Turn)")
+            
+            # 上段（上ボタン）
+            c_null1, c_up, c_null2 = st.columns([1, 1, 1])
+            with c_up:
+                if st.button("↑"):
+                    st.session_state.manual_action_hunter_0 = 1
+                    run_step_h0 = True
+            
+            # 中段（左、待機、右）
+            c_left, c_stay, c_right = st.columns([1, 1, 1])
+            with c_left:
+                if st.button("←"):
+                    st.session_state.manual_action_hunter_0 = 3
+                    run_step_h0 = True
+            with c_stay:
+                if st.button("・"):
+                    st.session_state.manual_action_hunter_0 = 0
+                    run_step_h0 = True
+            with c_right:
+                if st.button("→"):
+                    st.session_state.manual_action_hunter_0 = 4
+                    run_step_h0 = True
+                    
+            # 下段（下ボタン）
+            c_null3, c_down, c_null4 = st.columns([1, 1, 1])
+            with c_down:
+                if st.button("↓"):
+                    st.session_state.manual_action_hunter_0 = 2
+                    run_step_h0 = True
         
-        # 上段（上ボタン）
-        c_null1, c_up, c_null2 = st.columns([1, 1, 1])
-        with c_up:
-            if st.button("↑"):
-                st.session_state.manual_action_hunter_0 = 1
-                run_step = True
-            else:
-                run_step = False
-        
-        # 中段（左、待機、右）
-        c_left, c_stay, c_right = st.columns([1, 1, 1])
-        with c_left:
-            if st.button("←"):
-                st.session_state.manual_action_hunter_0 = 3
-                run_step = True
-        with c_stay:
-            if st.button("・"):
-                st.session_state.manual_action_hunter_0 = 0
-                run_step = True
-        with c_right:
-            if st.button("→"):
-                st.session_state.manual_action_hunter_0 = 4
-                run_step = True
-                
-        # 下段（下ボタン）
-        c_null3, c_down, c_null4 = st.columns([1, 1, 1])
-        with c_down:
-            if st.button("↓"):
-                st.session_state.manual_action_hunter_0 = 2
-                run_step = True
-                
+        else:
+            # AIのターン（待機中）
+            st.info("AI Thinking...")
+            run_step_h1 = True # 自動的にAIターンを実行
+
     else:
-        # 1ステップ進めるボタン
-        run_step = st.button("1ステップ進む")
+        # AI vs AI
+        run_step_ai_only = st.button("1ステップ進む")
 
 with col2:
     # リセットボタン
     if st.button("リセット"):
         initialize_simulation()
-        st.rerun() # 画面を即座に再読み込みして初期状態を表示
+        st.session_state.turn_phase = 'player' # フェーズもリセット
+        st.rerun()
 
-# --- 4. メインロジック（シミュレーションの実行） ---
+# --- WASDキーボード操作の有効化 ---
+# Player and AI モードのときのみ有効にする
+if game_mode == "Player and AI" and st.session_state.turn_phase == 'player':
+    components.html(
+        """
+        <script>
+        const doc = window.parent.document;
+        doc.addEventListener('keydown', function(e) {
+            const key = e.key.toLowerCase();
+            let targetText = null;
+            if (key === 'w') targetText = "↑";
+            if (key === 'a') targetText = "←";
+            if (key === 's') targetText = "↓";
+            if (key === 'd') targetText = "→";
+            if (key === ' ') targetText = "・";
 
-if run_step:
-    st.session_state.step_count += 1
-    
-    # 現状の環境状態を取得
-    current_state = st.session_state.env.get_state()
-    
-    if debug_info_H0:
-        st.subheader("Debug Info (Hunter 0)")
-        h0_pos_before = current_state.get('hunter_0')
-        p0_pos = current_state.get('prey_0')
-        st.info(f"[Before] Hunter 0 Pos: {h0_pos_before} | Target Prey 0 Pos: {p0_pos}")
-    if debug_info_H1:
-        st.subheader("Debug Info (Hunter 1)")
-        h1_pos_before = current_state.get('hunter_1')
-        p1_pos = current_state.get('prey_1')
-        st.info(f"[Before] Hunter 1 Pos: {h1_pos_before} | Target Prey 1 Pos: {p1_pos}")
-        
-    # --- エージェントの行動決定 ---
-    # 捕獲状況に応じたLv0のターゲット切替（フォールバック用）
-    target0_lv0 = 'prey_1' if st.session_state.captured.get('prey_0', False) else 'prey_0'
-    target1_lv0 = 'prey_0' if st.session_state.captured.get('prey_1', False) else 'prey_1'
+            if (targetText) {
+                const buttons = Array.from(doc.querySelectorAll('button'));
+                const button = buttons.find(b => b.innerText === targetText);
+                if (button) {
+                    button.click();
+                }
+            }
+        });
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
-    # Hunter 0
-    if control_h0 == "Lv0 (Q)" and st.session_state.q_agents.get('hunter_0') is not None:
-        action_0, chosen_prey0, label0 = st.session_state.q_agents['hunter_0'].choose_action(current_state)
-        if debug_info_H0:
-            st.info(f"[H0] mode=Lv0 (Q), chosen={chosen_prey0 or '-'} action={label0 or action_0}")
-    elif control_h0 == "Manual":
-        action_0 = st.session_state.manual_agent.choose_action(current_state)
-        if debug_info_H0:
-            st.info(f"[H0] mode=Manual, action_id={action_0}")
-    else:
-        action_0 = st.session_state.agent_0.choose_action(current_state, target0_lv0)
-        if debug_info_H0:
-            st.info(f"[H0] mode=Simple, target={target0_lv0} action_id={action_0}")
+# --- 4. シミュレーションの実行 ---
 
-    # Hunter 1
-    if control_h1 == "Lv0 (Q)" and st.session_state.q_agents.get('hunter_1') is not None:
-        action_1, chosen_prey1, label1 = st.session_state.q_agents['hunter_1'].choose_action(current_state)
-        if debug_info_H1:
-            st.info(f"[H1] mode=Lv0 (Q), chosen={chosen_prey1 or '-'} action={label1 or action_1}")
-    else:
-        action_1 = st.session_state.agent_1.choose_action(current_state, target1_lv0)
-        if debug_info_H1:
-            st.info(f"[H1] mode=Simple, target={target1_lv0} action_id={action_1}")
-
-    # --- 環境の状態更新 ---
-    # (注：本来は同時に行動すべきだが、簡易的に順番に行動させる)
-    st.session_state.env.step(agent_id='hunter_0', action_id=action_0)
-    st.session_state.env.step(agent_id='hunter_1', action_id=action_1)
-
-    # --- 捕獲判定（ハンターと同じマスの獲物は以後停止） ---
-    state_after = st.session_state.env.get_state()
-    h0 = state_after.get('hunter_0')
-    h1 = state_after.get('hunter_1')
-    p0 = state_after.get('prey_0')
-    p1 = state_after.get('prey_1')
+# 共通関数: 捕獲判定
+def check_capture():
+    state_now = st.session_state.env.get_state()
+    h0 = state_now.get('hunter_0')
+    h1 = state_now.get('hunter_1')
+    p0 = state_now.get('prey_0')
+    p1 = state_now.get('prey_1')
     if p0 in (h0, h1):
         st.session_state.captured['prey_0'] = True
     if p1 in (h0, h1):
         st.session_state.captured['prey_1'] = True
 
-    # --- 獲物の移動（任意） ---
+# 共通関数: 獲物の移動
+def move_prey():
     if prey_move_enabled:
-        def _rand_action():
-            # 10%で停止、90%で上下左右を等確率に選択
-            return 0 if random.random() < 0.1 else random.choice([1, 2, 3, 4])
-
-        # 獲物を動かす前にも重なりを最終確認（保険）
-        state_mid = st.session_state.env.get_state()
-        h0_mid = state_mid.get('hunter_0')
-        h1_mid = state_mid.get('hunter_1')
-        p0_mid = state_mid.get('prey_0')
-        p1_mid = state_mid.get('prey_1')
-        if p0_mid in (h0_mid, h1_mid):
-            st.session_state.captured['prey_0'] = True
-        if p1_mid in (h0_mid, h1_mid):
-            st.session_state.captured['prey_1'] = True
-
-        # prey_0 を必要に応じて移動 → 直後に再度捕獲チェック
+        # 獲物を動かす前にも重なりを最終確認
+        check_capture()
+        
+        # prey_0
         if not st.session_state.captured['prey_0']:
-            st.session_state.env.step(agent_id='prey_0', action_id=_rand_action())
-            state_after_p0 = st.session_state.env.get_state()
-            p0_new = state_after_p0.get('prey_0')
-            h0_new = state_after_p0.get('hunter_0')
-            h1_new = state_after_p0.get('hunter_1')
-            if p0_new in (h0_new, h1_new):
-                st.session_state.captured['prey_0'] = True
-
-        # prey_1 も同様
+            # 10%で停止、90%で移動
+            a = 0 if random.random() < 0.1 else random.choice([1, 2, 3, 4])
+            st.session_state.env.step(agent_id='prey_0', action_id=a)
+        
+        # prey_1
         if not st.session_state.captured['prey_1']:
-            st.session_state.env.step(agent_id='prey_1', action_id=_rand_action())
-            state_after_p1 = st.session_state.env.get_state()
-            p1_new = state_after_p1.get('prey_1')
-            h0_new = state_after_p1.get('hunter_0')
-            h1_new = state_after_p1.get('hunter_1')
-            if p1_new in (h0_new, h1_new):
-                st.session_state.captured['prey_1'] = True
+            a = 0 if random.random() < 0.1 else random.choice([1, 2, 3, 4])
+            st.session_state.env.step(agent_id='prey_1', action_id=a)
             
+        # 移動後の捕獲判定
+        check_capture()
 
+# --- ケースA: AI vs AI (一括実行) ---
+if run_step_ai_only:
+    st.session_state.step_count += 1
+    current_state = st.session_state.env.get_state()
+    
+    # ターゲット決定
+    target0_lv0 = 'prey_1' if st.session_state.captured.get('prey_0', False) else 'prey_0'
+    target1_lv0 = 'prey_0' if st.session_state.captured.get('prey_1', False) else 'prey_1'
+
+    # Hunter 0 Action
+    if control_h0 == "Lv0 (Q)" and st.session_state.q_agents.get('hunter_0') is not None:
+        action_0, _, _ = st.session_state.q_agents['hunter_0'].choose_action(current_state)
+    else:
+        action_0 = st.session_state.agent_0.choose_action(current_state, target0_lv0)
+
+    # Hunter 1 Action
+    if control_h1 == "Lv0 (Q)" and st.session_state.q_agents.get('hunter_1') is not None:
+        action_1, _, _ = st.session_state.q_agents['hunter_1'].choose_action(current_state)
+    else:
+        action_1 = st.session_state.agent_1.choose_action(current_state, target1_lv0)
+
+    # 実行
+    st.session_state.env.step(agent_id='hunter_0', action_id=action_0)
+    st.session_state.env.step(agent_id='hunter_1', action_id=action_1)
+    
+    # 捕獲判定
+    check_capture()
+    
+    move_prey()
+    st.rerun()
+
+# --- ケースB: Player vs AI (Playerターン) ---
+if run_step_h0:
+    st.session_state.step_count += 1
+    
+    # プレイヤーの行動を実行
+    action_0 = st.session_state.manual_action_hunter_0
+    st.session_state.env.step(agent_id='hunter_0', action_id=action_0)
+    
+    # 捕獲判定（自分が動いて捕まえたか）
+    check_capture()
+    
+    # フェーズをAIに移行してリロード
+    st.session_state.turn_phase = 'ai'
+    st.rerun()
+
+# --- ケースC: Player vs AI (AIターン) ---
+if run_step_h1:
+    # 少し待機（演出）
+    time.sleep(0.5)
+    
+    current_state = st.session_state.env.get_state()
+    
+    # Hunter 1 Action
+    target1_lv0 = 'prey_0' if st.session_state.captured.get('prey_1', False) else 'prey_1'
+    if control_h1 == "Lv0 (Q)" and st.session_state.q_agents.get('hunter_1') is not None:
+        action_1, _, _ = st.session_state.q_agents['hunter_1'].choose_action(current_state)
+    else:
+        action_1 = st.session_state.agent_1.choose_action(current_state, target1_lv0)
+        
+    st.session_state.env.step(agent_id='hunter_1', action_id=action_1)
+    
+    # 捕獲判定
+    check_capture()
+    
+    move_prey()
+    
+    # フェーズをPlayerに戻してリロード
+    st.session_state.turn_phase = 'player'
+    st.rerun()
 # --- 5. 状態の描画 ---
 
 st.header(f"ステップ: {st.session_state.step_count}")
@@ -327,7 +372,7 @@ st.caption(
 )
 
 # 現在の全エージェントと獲物の位置情報を表示
-current_state = st.session_state.env.get_state()
-draw_grid_matplotlib(current_state)
+# current_state = st.session_state.env.get_state()
+# draw_grid_matplotlib(current_state, game_mode)
 
 # (TODO: 将来的には、ここをグリッド描画に置き換える)

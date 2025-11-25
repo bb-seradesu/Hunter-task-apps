@@ -12,11 +12,12 @@ Streamlitを使用して以下の機能を提供する。
 import streamlit as st
 import random
 import pickle
-from game_env import HunterTaskEnv
-from agents import Lv0Agent
-from ui_components import draw_grid_matplotlib
-from q_utils import ACTION_LABEL_TO_ID
-from agents_q import QLearningAgent
+from src.env.game_env import HunterTaskEnv
+from src.agents.lv0 import Lv0Agent
+from src.ui.components import draw_grid_matplotlib
+from src.agents.q_utils import ACTION_LABEL_TO_ID
+from src.agents.q_learning import QLearningAgent
+from src.agents.manual import ManualAgent
 
 def initialize_simulation():
     """
@@ -25,15 +26,20 @@ def initialize_simulation():
     st.session_state.env = HunterTaskEnv(num_hunters=2, num_prey=2)
     st.session_state.agent_0 = Lv0Agent(agent_id='hunter_0')
     st.session_state.agent_1 = Lv0Agent(agent_id='hunter_1')
+    st.session_state.manual_agent = ManualAgent(agent_id='hunter_0') # マニュアル用エージェント
     st.session_state.step_count = 0
     # 捕獲状態とQテーブルの入れ物を初期化
     st.session_state.captured = {'prey_0': False, 'prey_1': False}
     st.session_state.q_tables = {'hunter_0': None, 'hunter_1': None}
     st.session_state.q_agents = {'hunter_0': None, 'hunter_1': None}
+    
+    # マニュアル操作の初期化
+    if 'manual_action_hunter_0' not in st.session_state:
+        st.session_state.manual_action_hunter_0 = 0
 
 # --- 1. アプリケーションの開始 ---
 
-st.title("ハンタータスク シミュレーション (Lv.0)")
+st.title("ハンタータスク シミュレーション")
 
 # --- 2. 状態の初期化 ---
 # st.session_stateに 'env' がまだ存在しない場合（＝アプリ起動時）のみ実行
@@ -103,9 +109,22 @@ with st.sidebar.expander("Qテーブル（読み込みのみ）", expanded=False
     else:
         st.session_state.q_agents['hunter_1'] = None
 
+# ゲームモード選択
+game_mode = st.sidebar.radio(
+    "ゲームモード",
+    ["AI vs AI", "Player vs AI"],
+    index=0,
+    help="Player vs AIモードでは、Hunter 0を操作できます"
+)
+
 # ハンター制御モード
-control_h0 = st.sidebar.selectbox("Hunter 0 制御", ["Lv0", "Q"], index=0, key="ctrl_h0")
-control_h1 = st.sidebar.selectbox("Hunter 1 制御", ["Lv0", "Q"], index=0, key="ctrl_h1")
+if game_mode == "AI vs AI":
+    control_h0 = st.sidebar.selectbox("Hunter 0 制御", ["Simple", "Lv0 (Q)"], index=0, key="ctrl_h0")
+else:
+    control_h0 = "Manual"
+    st.sidebar.info("Hunter 0 はプレイヤー操作です")
+
+control_h1 = st.sidebar.selectbox("Hunter 1 制御", ["Simple", "Lv0 (Q)"], index=0, key="ctrl_h1")
 
 # Qテーブルの自動ロード（ユーザーが選ばなくても使えるように）
 default_paths = {
@@ -126,7 +145,7 @@ for hunter_id in ('hunter_0', 'hunter_1'):
     else:
         control_mode = control_h1
 
-    if control_mode == "Q":
+    if control_mode == "Lv0 (Q)":
         agent_exists = False
         if hunter_id in st.session_state.q_agents:
             if st.session_state.q_agents[hunter_id] is not None:
@@ -152,8 +171,43 @@ for hunter_id in ('hunter_0', 'hunter_1'):
 col1, col2 = st.columns(2)
 
 with col1:
-    # 1ステップ進めるボタン
-    run_step = st.button("1ステップ進む")
+    if game_mode == "Player vs AI":
+        st.write("Hunter 0 操作")
+        
+        # 上段（上ボタン）
+        c_null1, c_up, c_null2 = st.columns([1, 1, 1])
+        with c_up:
+            if st.button("↑"):
+                st.session_state.manual_action_hunter_0 = 1
+                run_step = True
+            else:
+                run_step = False
+        
+        # 中段（左、待機、右）
+        c_left, c_stay, c_right = st.columns([1, 1, 1])
+        with c_left:
+            if st.button("←"):
+                st.session_state.manual_action_hunter_0 = 3
+                run_step = True
+        with c_stay:
+            if st.button("・"):
+                st.session_state.manual_action_hunter_0 = 0
+                run_step = True
+        with c_right:
+            if st.button("→"):
+                st.session_state.manual_action_hunter_0 = 4
+                run_step = True
+                
+        # 下段（下ボタン）
+        c_null3, c_down, c_null4 = st.columns([1, 1, 1])
+        with c_down:
+            if st.button("↓"):
+                st.session_state.manual_action_hunter_0 = 2
+                run_step = True
+                
+    else:
+        # 1ステップ進めるボタン
+        run_step = st.button("1ステップ進む")
 
 with col2:
     # リセットボタン
@@ -186,24 +240,28 @@ if run_step:
     target1_lv0 = 'prey_0' if st.session_state.captured.get('prey_1', False) else 'prey_1'
 
     # Hunter 0
-    if control_h0 == "Q" and st.session_state.q_agents.get('hunter_0') is not None:
+    if control_h0 == "Lv0 (Q)" and st.session_state.q_agents.get('hunter_0') is not None:
         action_0, chosen_prey0, label0 = st.session_state.q_agents['hunter_0'].choose_action(current_state)
         if debug_info_H0:
-            st.info(f"[H0] mode=Q, chosen={chosen_prey0 or '-'} action={label0 or action_0}")
+            st.info(f"[H0] mode=Lv0 (Q), chosen={chosen_prey0 or '-'} action={label0 or action_0}")
+    elif control_h0 == "Manual":
+        action_0 = st.session_state.manual_agent.choose_action(current_state)
+        if debug_info_H0:
+            st.info(f"[H0] mode=Manual, action_id={action_0}")
     else:
         action_0 = st.session_state.agent_0.choose_action(current_state, target0_lv0)
         if debug_info_H0:
-            st.info(f"[H0] mode=Lv0, target={target0_lv0} action_id={action_0}")
+            st.info(f"[H0] mode=Simple, target={target0_lv0} action_id={action_0}")
 
     # Hunter 1
-    if control_h1 == "Q" and st.session_state.q_agents.get('hunter_1') is not None:
+    if control_h1 == "Lv0 (Q)" and st.session_state.q_agents.get('hunter_1') is not None:
         action_1, chosen_prey1, label1 = st.session_state.q_agents['hunter_1'].choose_action(current_state)
         if debug_info_H1:
-            st.info(f"[H1] mode=Q, chosen={chosen_prey1 or '-'} action={label1 or action_1}")
+            st.info(f"[H1] mode=Lv0 (Q), chosen={chosen_prey1 or '-'} action={label1 or action_1}")
     else:
         action_1 = st.session_state.agent_1.choose_action(current_state, target1_lv0)
         if debug_info_H1:
-            st.info(f"[H1] mode=Lv0, target={target1_lv0} action_id={action_1}")
+            st.info(f"[H1] mode=Simple, target={target1_lv0} action_id={action_1}")
 
     # --- 環境の状態更新 ---
     # (注：本来は同時に行動すべきだが、簡易的に順番に行動させる)

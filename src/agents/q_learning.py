@@ -10,7 +10,7 @@
 """
 
 from typing import Any, Dict, Tuple, Optional
-from q_utils import q_choose_action
+from src.agents.q_utils import q_choose_action
 
 
 class QLearningAgent:

@@ -8,7 +8,7 @@
 """
 
 import numpy as np
-from game_env import GRID_SIZE
+from src.env.game_env import GRID_SIZE
 
 class Lv0Agent:
     

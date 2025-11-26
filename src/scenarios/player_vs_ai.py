@@ -16,6 +16,7 @@ def run_player_turn():
     # プレイヤーの行動を実行
     action_0 = st.session_state.manual_action_hunter_0
     st.session_state.env.step(agent_id=AGENT_ID_HUNTER_0, action_id=action_0)
+    st.session_state.last_actions[AGENT_ID_HUNTER_0] = action_0
     
     check_capture()
     
@@ -28,7 +29,7 @@ def run_ai_turn(control_h1: str, debug_info_h1: bool, prey_move_enabled: bool):
     Player vs AI モード：AIのターンを実行する。
     """
     # 少し待機（演出）
-    time.sleep(0.1)
+    time.sleep(0.001)
     
     current_state = st.session_state.env.get_state()
     
@@ -36,6 +37,7 @@ def run_ai_turn(control_h1: str, debug_info_h1: bool, prey_move_enabled: bool):
     action_1 = get_agent_action(AGENT_ID_HUNTER_1, control_h1, current_state, debug_info_h1)
         
     st.session_state.env.step(agent_id=AGENT_ID_HUNTER_1, action_id=action_1)
+    st.session_state.last_actions[AGENT_ID_HUNTER_1] = action_1
     
     check_capture()
     move_prey(prey_move_enabled)

@@ -7,12 +7,13 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
 
-from game_env import GRID_SIZE
+from src.env.game_env import GRID_SIZE
 
-def draw_grid_matplotlib(state, game_mode="AI and AI"):
+def draw_grid_matplotlib(state, game_mode="AI and AI", last_actions=None):
     """
     現在の状態 (state) をMatplotlibでグリッド描画する。
     内部座標 0-19 を、表示上 1-20 として扱う。
+    last_actions: {agent_id: action_id} の辞書。向きの決定に使用。
     """
     
     fig, ax = plt.subplots(figsize=(6, 6))
@@ -39,6 +40,22 @@ def draw_grid_matplotlib(state, game_mode="AI and AI"):
 
     # --- 描画 (1-20 の座標系で行う) ---
     
+    # 行動IDから回転角度への変換 (Matplotlibのマーカーはデフォルトで上向き)
+    # 0: STAY (上向きのまま), 1: UP (0度), 2: DOWN (180度), 3: LEFT (90度), 4: RIGHT (270度)
+    # 注意: Matplotlibの回転は反時計回り。
+    # ^ (上) を基準にする。
+    # UP(1): 0度
+    # DOWN(2): 180度
+    # LEFT(3): 90度
+    # RIGHT(4): 270度 (-90度)
+    
+    def _get_marker_rotation(action_id):
+        if action_id == 1: return 0    # UP
+        if action_id == 2: return 180  # DOWN
+        if action_id == 3: return 90   # LEFT
+        if action_id == 4: return 270  # RIGHT
+        return 0 # STAY or Default
+        
     # 獲物 (Green)
     if prey_pos:
         # 位置とIDを分離
@@ -56,11 +73,33 @@ def draw_grid_matplotlib(state, game_mode="AI and AI"):
     if hunter_0_pos:
         color_h0 = 'blue' if game_mode == "Player and AI" else 'cyan'
         label_h0 = 'Player (H0)' if game_mode == "Player and AI" else 'Hunter 0'
-        ax.scatter([hunter_0_pos[0]], [hunter_0_pos[1]], c=color_h0, marker='^', s=150, label=label_h0)
+        
+        # 向きの決定
+        rot = 0
+        if last_actions and 'hunter_0' in last_actions:
+            rot = _get_marker_rotation(last_actions['hunter_0'])
+            
+        # マーカーの作成 (回転付き)
+        # marker=(numsides, style, angle) は正多角形用なので、
+        # ここでは MarkerStyle を使うのが確実だが、scatter は個別の MarkerStyle を受け付けにくい。
+        # しかし1点ずつプロットするなら問題ない。
+        from matplotlib.markers import MarkerStyle
+        m = MarkerStyle("^")
+        m._transform = m.get_transform().rotate_deg(rot)
+        
+        ax.scatter([hunter_0_pos[0]], [hunter_0_pos[1]], c=color_h0, marker=m, s=150, label=label_h0)
 
     # Hunter 1 (AI: Red)
     if hunter_1_pos:
-        ax.scatter([hunter_1_pos[0]], [hunter_1_pos[1]], c='red', marker='v', s=150, label='Hunter 1 (AI)')
+        rot = 0
+        if last_actions and 'hunter_1' in last_actions:
+            rot = _get_marker_rotation(last_actions['hunter_1'])
+            
+        from matplotlib.markers import MarkerStyle
+        m = MarkerStyle("^") # 統一して ^ を使い、回転させる
+        m._transform = m.get_transform().rotate_deg(rot)
+        
+        ax.scatter([hunter_1_pos[0]], [hunter_1_pos[1]], c='red', marker=m, s=150, label='Hunter 1 (AI)')
 
     # --- グリッドの設定 (1-20) ---
     display_grid_min = 1

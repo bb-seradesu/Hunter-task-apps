@@ -38,6 +38,15 @@ def initialize_simulation():
     if 'turn_phase' not in st.session_state:
         st.session_state.turn_phase = 'player'
 
+    # 各エージェントの直前の行動（向き）を保持
+    if 'last_actions' not in st.session_state:
+        st.session_state.last_actions = {
+            AGENT_ID_HUNTER_0: 0, # 0: STAY (Default)
+            AGENT_ID_HUNTER_1: 0,
+            AGENT_ID_PREY_0: 0,
+            AGENT_ID_PREY_1: 0
+        }
+
 def check_capture():
     """
     現在の状態に基づいて捕獲判定を行い、st.session_state.captured を更新する。
@@ -55,7 +64,8 @@ def check_capture():
 
 def move_prey(enabled: bool):
     """
-    獲物をランダムに移動させる。
+    獲物を移動させる。
+    確率: 上(20%), 右(40%), 停止(40%)
     """
     if not enabled:
         return
@@ -63,15 +73,23 @@ def move_prey(enabled: bool):
     # 移動前の捕獲チェック
     check_capture()
     
+    # 行動の候補と重み
+    # 0: STAY, 1: UP, 4: RIGHT
+    actions = [0, 1, 4]
+    weights = [40, 20, 40] # %, 合計100
+    
     # prey_0
     if not st.session_state.captured[AGENT_ID_PREY_0]:
-        a = 0 if random.random() < 0.1 else random.choice([1, 2, 3, 4])
+        # random.choices はリストを返すので [0] を取る
+        a = random.choices(actions, weights=weights, k=1)[0]
         st.session_state.env.step(agent_id=AGENT_ID_PREY_0, action_id=a)
+        st.session_state.last_actions[AGENT_ID_PREY_0] = a
     
     # prey_1
     if not st.session_state.captured[AGENT_ID_PREY_1]:
-        a = 0 if random.random() < 0.1 else random.choice([1, 2, 3, 4])
+        a = random.choices(actions, weights=weights, k=1)[0]
         st.session_state.env.step(agent_id=AGENT_ID_PREY_1, action_id=a)
+        st.session_state.last_actions[AGENT_ID_PREY_1] = a
         
     # 移動後の捕獲チェック
     check_capture()

@@ -21,7 +21,10 @@ def run_ai_vs_ai_step(control_h0: str, control_h1: str, debug_info_h0: bool, deb
 
     # 実行
     st.session_state.env.step(agent_id=AGENT_ID_HUNTER_0, action_id=action_0)
+    st.session_state.last_actions[AGENT_ID_HUNTER_0] = action_0
+    
     st.session_state.env.step(agent_id=AGENT_ID_HUNTER_1, action_id=action_1)
+    st.session_state.last_actions[AGENT_ID_HUNTER_1] = action_1
     
     check_capture()
     move_prey(prey_move_enabled)

@@ -38,7 +38,9 @@ debug_info_h1 = config["debug_info_h1"]
 # --- 4. グリッド描画 ---
 if 'env' in st.session_state:
     current_state = st.session_state.env.get_state()
-    draw_grid_matplotlib(current_state, game_mode)
+    # 初期化直後などで last_actions が無い場合のガード
+    last_actions = st.session_state.get('last_actions', {})
+    draw_grid_matplotlib(current_state, game_mode, last_actions)
 
 # --- 5. UIコンポーネント（ボタン）とメインロジック ---
 

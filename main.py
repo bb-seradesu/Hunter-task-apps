@@ -4,7 +4,7 @@
 """
 
 import streamlit as st
-from src.ui.components import draw_grid_matplotlib
+from src.ui.components import draw_grid_html
 from src.ui.sidebar import render_sidebar
 from src.game_logic import initialize_simulation
 from src.config import (
@@ -40,7 +40,7 @@ if 'env' in st.session_state:
     current_state = st.session_state.env.get_state()
     # 初期化直後などで last_actions が無い場合のガード
     last_actions = st.session_state.get('last_actions', {})
-    draw_grid_matplotlib(current_state, game_mode, last_actions)
+    draw_grid_html(current_state, game_mode, last_actions)
 
 # --- 5. UIコンポーネント（ボタン）とメインロジック ---
 

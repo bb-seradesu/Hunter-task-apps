@@ -4,6 +4,7 @@
 
 import streamlit as st
 import pickle
+import pandas as pd
 from typing import Dict, Any
 
 from src.config import (
@@ -128,6 +129,21 @@ def render_sidebar() -> Dict[str, Any]:
                         st.sidebar.warning(f"{hunter_id}: {path} は想定外の形式です")
                 except Exception as e:
                     st.sidebar.warning(f"{hunter_id}: {path} の自動読み込みに失敗しました: {e}")
+
+    # --- ログダウンロード ---
+    st.sidebar.markdown("---")
+    if 'history' in st.session_state and st.session_state.history:
+        df_log = pd.DataFrame(st.session_state.history)
+        csv = df_log.to_csv(index=False).encode('utf-8')
+        
+        st.sidebar.download_button(
+            label="ログをダウンロード (CSV)",
+            data=csv,
+            file_name='hunter_task_log.csv',
+            mime='text/csv',
+        )
+    else:
+        st.sidebar.caption("ログ: データなし")
 
     return {
         "game_mode": game_mode,

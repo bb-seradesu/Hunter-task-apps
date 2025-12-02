@@ -4,7 +4,7 @@ AI vs AI モードの実行ロジック。
 
 import streamlit as st
 from src.config import AGENT_ID_HUNTER_0, AGENT_ID_HUNTER_1
-from src.game_logic import check_capture, move_prey, get_agent_action
+from src.game_logic import check_capture, move_prey, get_agent_action, log_step
 
 def run_ai_vs_ai_step(control_h0: str, control_h1: str, debug_info_h0: bool, debug_info_h1: bool, prey_move_enabled: bool):
     """
@@ -25,6 +25,9 @@ def run_ai_vs_ai_step(control_h0: str, control_h1: str, debug_info_h0: bool, deb
     
     st.session_state.env.step(agent_id=AGENT_ID_HUNTER_1, action_id=action_1)
     st.session_state.last_actions[AGENT_ID_HUNTER_1] = action_1
+    
+    # ログ記録
+    log_step(action_0, action_1)
     
     check_capture()
     move_prey(prey_move_enabled)

@@ -47,6 +47,31 @@ def initialize_simulation():
             AGENT_ID_PREY_1: 0
         }
 
+    # ログ保存用リスト
+    if 'history' not in st.session_state:
+        st.session_state.history = []
+
+def log_step(action_h0, action_h1):
+    """
+    現在の状態とアクションを履歴に保存する。
+    """
+    state = st.session_state.env.get_state()
+    
+    # 記録するデータ
+    record = {
+        "step": st.session_state.step_count,
+        "h0_pos": state[AGENT_ID_HUNTER_0],
+        "h1_pos": state[AGENT_ID_HUNTER_1],
+        "p0_pos": state[AGENT_ID_PREY_0],
+        "p1_pos": state[AGENT_ID_PREY_1],
+        "h0_action": action_h0,
+        "h1_action": action_h1,
+        "captured_p0": st.session_state.captured[AGENT_ID_PREY_0],
+        "captured_p1": st.session_state.captured[AGENT_ID_PREY_1]
+    }
+    
+    st.session_state.history.append(record)
+
 def check_capture():
     """
     現在の状態に基づいて捕獲判定を行い、st.session_state.captured を更新する。

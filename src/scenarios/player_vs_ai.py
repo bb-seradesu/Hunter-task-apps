@@ -5,7 +5,7 @@ Player vs AI モードの実行ロジック。
 import streamlit as st
 import time
 from src.config import AGENT_ID_HUNTER_0, AGENT_ID_HUNTER_1
-from src.game_logic import check_capture, move_prey, get_agent_action
+from src.game_logic import check_capture, move_prey, get_agent_action, log_step
 
 def run_player_turn():
     """
@@ -38,6 +38,12 @@ def run_ai_turn(control_h1: str, debug_info_h1: bool, prey_move_enabled: bool):
         
     st.session_state.env.step(agent_id=AGENT_ID_HUNTER_1, action_id=action_1)
     st.session_state.last_actions[AGENT_ID_HUNTER_1] = action_1
+    
+    # ログ記録 (Playerのアクションは前回のターンで決まっている)
+    # Player vs AI の場合、1ステップが Playerターン + AIターン で構成されるとみなすか、
+    # それぞれで記録するかだが、ここでは「AIが動いた時点」で1ステップ完了として記録する。
+    action_0 = st.session_state.manual_action_hunter_0
+    log_step(action_0, action_1)
     
     check_capture()
     move_prey(prey_move_enabled)
